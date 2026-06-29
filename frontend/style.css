@@ -1,0 +1,154 @@
+/* ========================================
+   Data Agent — 蓝白数据分析主题
+   ======================================== */
+
+/* --- 全局 --- */
+body, .stApp {
+    background-color: #F8FAFC;
+    color: #1E293B;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* --- 侧边栏 --- */
+[data-testid="stSidebar"] {
+    background-color: #FFFBEB;
+    border-right: 1px solid #FDE68A;
+}
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+    color: #92400E;
+}
+
+/* --- 标题 --- */
+h1 {
+    color: #1E40AF !important;
+    font-weight: 700 !important;
+    font-size: 1.8rem !important;
+}
+h2, h3 {
+    color: #2563EB !important;
+}
+
+/* --- 聊天消息 --- */
+.stChatMessage {
+    background-color: #FFFFFF;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin: 8px 0;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.stChatMessage [data-testid="chatAvatarIcon-user"] {
+    background-color: #2563EB;
+}
+.stChatMessage [data-testid="chatAvatarIcon-assistant"] {
+    background-color: #3B82F6;
+}
+
+/* --- 用户消息特殊样式 --- */
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+    border-left: 3px solid #2563EB;
+}
+
+/* --- 文件上传区 --- */
+div[data-testid="stFileUploader"] {
+    border: 2px dashed #BFDBFE;
+    border-radius: 10px;
+    padding: 16px;
+    background-color: #EFF6FF;
+    transition: border-color 0.2s;
+}
+div[data-testid="stFileUploader"]:hover {
+    border-color: #3B82F6;
+}
+
+/* --- 按钮 --- */
+button[kind="primary"], .stButton > button {
+    background-color: #2563EB !important;
+    border-color: #2563EB !important;
+    color: #FFFFFF !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+button[kind="primary"]:hover, .stButton > button:hover {
+    background-color: #1D4ED8 !important;
+    border-color: #1D4ED8 !important;
+}
+
+/* 次要按钮 */
+button[kind="secondary"] {
+    background-color: #FFFFFF !important;
+    border: 1px solid #DBEAFE !important;
+    color: #2563EB !important;
+    border-radius: 8px !important;
+}
+button[kind="secondary"]:hover {
+    background-color: #EFF6FF !important;
+}
+
+/* --- 输入框 --- */
+[data-testid="stChatInput"] textarea {
+    border: 2px solid #2563EB !important;
+    border-radius: 8px !important;
+    background-color: #FFFFFF !important;
+    box-shadow: none !important;
+}
+[data-testid="stChatInput"] textarea:focus {
+    border-color: #1D4ED8 !important;
+    box-shadow: none !important;
+}
+
+/* --- 成功/信息提示 --- */
+.stSuccess {
+    background-color: #ECFDF5 !important;
+    border-left: 3px solid #059669 !important;
+    color: #065F46 !important;
+}
+.stInfo {
+    background-color: #EFF6FF !important;
+    border-left: 3px solid #2563EB !important;
+}
+.stError {
+    background-color: #FEF2F2 !important;
+    border-left: 3px solid #DC2626 !important;
+}
+
+/* --- 历史会话列表项 --- */
+.history-item {
+    padding: 10px 12px;
+    margin: 4px 0;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid #E2E8F0;
+    background-color: #FFFFFF;
+    transition: all 0.15s;
+}
+.history-item:hover {
+    background-color: #EFF6FF;
+    border-color: #BFDBFE;
+}
+.history-item.active {
+    background-color: #DBEAFE;
+    border-color: #2563EB;
+}
+
+/* --- 小字标注 --- */
+.stCaption {
+    color: #64748B !important;
+}
+
+/* --- 分割线 --- */
+hr {
+    border-color: #E2E8F0 !important;
+}
+
+/* --- 滚动条 --- */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+    background: #94A3B8;
+    border-radius: 3px;
+}
