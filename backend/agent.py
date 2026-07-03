@@ -1,13 +1,12 @@
 import os
 import re
-import sqlite3
-from typing import Dict, Any, Optional, Annotated, TypedDict
+from typing import Dict, Any, Annotated, TypedDict
 
 from dotenv import load_dotenv
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 import pandas as pd
@@ -19,25 +18,14 @@ import seaborn as sns
 import io
 import base64
 
-# ----- 中文字体 -----
+# ----- 中文字体（Linux 优先） -----
 import matplotlib.font_manager as fm
-import os as _os
-_win_font_dir = r"C:\Windows\Fonts"
-_CN_FONT_FILES = ["msyh.ttc", "msyhbd.ttc", "simhei.ttf", "simsun.ttc", "simsunb.ttf", "simkai.ttf", "simfang.ttf"]
-if _os.path.exists(_win_font_dir):
-    for _fn in _CN_FONT_FILES:
-        _fp = _os.path.join(_win_font_dir, _fn)
-        if _os.path.exists(_fp):
-            try:
-                fm.fontManager.addfont(_fp)
-            except Exception:
-                pass
-_available_fonts = {f.name for f in fm.fontManager.ttflist}
 _CN_FONT_CANDIDATES = [
-    'Microsoft YaHei', 'SimHei', 'SimSun', 'KaiTi', 'FangSong',
-    'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei',
+    'WenQuanYi Zen Hei', 'WenQuanYi Micro Hei',
     'Noto Sans CJK SC', 'Noto Sans CJK', 'Noto Serif CJK SC',
+    'Microsoft YaHei', 'SimHei', 'SimSun', 'KaiTi',
 ]
+_available_fonts = {f.name for f in fm.fontManager.ttflist}
 _CN_FONT = next((f for f in _CN_FONT_CANDIDATES if f in _available_fonts), None)
 if _CN_FONT:
     plt.rcParams['font.sans-serif'] = [_CN_FONT, 'DejaVu Sans']
@@ -47,12 +35,12 @@ else:
 
 from .tools import DATA_STORE, execute_nl2sql, analyze_data
 
-# ========== 自定义 State：chart_spec 每次覆盖不累积 ==========
+# ========== 自定义 State ==========
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
-    remaining_steps: int  # create_react_agent 要求的字段
-    chart_spec: str       # 普通 str，不会被累积，每次直接覆盖
+    remaining_steps: int
+    chart_spec: str
 
 # ========== LLM ==========
 load_dotenv()
@@ -98,7 +86,6 @@ def compute_data(file_id: str, code: str) -> str:
 
 
 def _extract_chart_type(msg: str) -> str:
-    """从用户消息提取图表类型"""
     m = msg.lower()
     if any(k in m for k in ["柱状图", "柱形图", "bar", "条形图", "对比", "排名"]):
         return "bar"
@@ -124,7 +111,6 @@ def create_chart(file_id: str, chart_description: str) -> str:
     if df is None:
         return "错误：文件不存在。"
 
-    # 生成数据统计概览
     _stats_lines = [f"数据行数: {len(df)}, 列数: {len(df.columns)}"]
     for _col in df.columns:
         _dtype = df[_col].dtype
@@ -173,7 +159,7 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "    plt.gca().yaxis.set_major_formatter(ScalarFormatter())\n"
         "    plt.ticklabel_format(style='plain', axis='y')\n"
         "except Exception:\n"
-        "    pass  # 分类轴不适用\n"
+        "    pass\n"
         "plt.figure(figsize=(9,6))\n"
         "plt.grid(True, linestyle='--', alpha=0.3)\n"
         "# 绘图代码\n"
@@ -196,20 +182,17 @@ def create_chart(file_id: str, chart_description: str) -> str:
 
     local_vars = {'df': df, 'pd': pd, 'np': np, 'plt': plt, 'sns': sns, 'io': io, 'base64': base64}
     try:
-        # 静态检查：禁止 plt.savefig 写到文件（必须用 buf）
         _savefig_calls = re.findall(r'plt\.savefig\(([^)]+(?:\([^)]*\)[^)]*)*)\)', code)
         for _call in _savefig_calls:
             _first_arg = _call.split(',')[0].strip().strip("'").strip('"')
             if _first_arg != 'buf':
                 return "错误：plt.savefig 写到了文件而非 buf！必须用 plt.savefig(buf, format='png', bbox_inches='tight')，严禁保存为磁盘文件。请修正代码。"
 
-        # 防御：记录 exec 前已有的 png，exec 后清理新增的
         import glob as _glob
         _png_before = set(_glob.glob("*.png"))
 
         exec(code, {"__builtins__": builtins.__dict__}, local_vars)
 
-        # 清理泄漏的 png 文件
         for _fp in set(_glob.glob("*.png")) - _png_before:
             try:
                 os.remove(_fp)
@@ -226,11 +209,8 @@ def create_chart(file_id: str, chart_description: str) -> str:
 
 tools = [load_data, query_data, compute_data, create_chart]
 
-# ========== 构建 Agent ==========
-DB_PATH = "agent_memory_v2.db"
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-conn.execute("PRAGMA journal_mode=DELETE")
-checkpointer = SqliteSaver(conn)
+# ========== 构建 Agent（MemorySaver，重启丢失） ==========
+checkpointer = MemorySaver()
 
 SYSTEM_PROMPT = (
     "你是专业的数据分析助手，可以加载数据、查询、计算、生成图表。请始终优先使用工具，最后用中文总结。\n\n"
@@ -241,7 +221,6 @@ SYSTEM_PROMPT = (
     "每次处理用户提问时都必须独立处理，以当前用户消息中的明确指示为准。"
 )
 
-# 用 create_react_agent 构建
 agent = create_react_agent(
     model=llm,
     tools=tools,
@@ -284,10 +263,8 @@ def process_chat(thread_id: str, user_message: str) -> Dict[str, Any]:
     compress_history(thread_id)
     config = {"configurable": {"thread_id": thread_id}}
 
-    # 从当前用户消息提取 chart_spec（每次覆盖，不累积）
     chart_spec = _extract_chart_type(user_message)
 
-    # 记录 invoke 前的消息数，用于后续只处理当前轮次新增的消息
     state_before = agent.get_state(config)
     msg_count_before = len(state_before.values.get("messages", [])) if state_before and state_before.values else 0
 
@@ -296,7 +273,6 @@ def process_chat(thread_id: str, user_message: str) -> Dict[str, Any]:
         config=config
     )
 
-    # 只处理当前轮次新增的消息
     new_messages = result.get("messages", [])[msg_count_before:]
 
     process_steps = []

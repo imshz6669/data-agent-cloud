@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .venv-linux/
+venv/
 
 # Environment secrets
 .env
@@ -23,7 +24,14 @@ wheels/
 
 # IDE
 .idea/
+.vscode/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Streamlit
+.streamlit/
+
+# uv
+uv.lock
