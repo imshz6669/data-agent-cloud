@@ -167,17 +167,22 @@ def create_chart(file_id: str, chart_description: str) -> str:
 
     local_vars = {'df': df, 'pd': pd, 'np': np, 'plt': plt, 'sns': sns, 'io': io, 'base64': base64}
     try:
-        # exec 前强制设置中文字体（防止 LLM 代码中 plt.figure() 重置 rcParams）
+        # 注入字体设置代码到 LLM 生成的代码头部（确保 exec 中也不会丢字体）
         _font_path = os.environ.get("CN_FONT_PATH", "")
-        _font_name = os.environ.get("CN_FONT_NAME", "WenQuanYi Zen Hei")
-        if _font_path and os.path.exists(_font_path):
-            try:
-                import matplotlib.font_manager as _fm
-                _fm.fontManager.addfont(_font_path)
-            except Exception:
-                pass
-        plt.rcParams['font.sans-serif'] = [_font_name, 'DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False
+        if _font_path:
+            _font_inject = (
+                "import matplotlib.pyplot as plt\n"
+                "import matplotlib.font_manager as _fm\n"
+                "import warnings\n"
+                "warnings.filterwarnings('ignore')\n"
+                f"try:\n"
+                f"    _fm.fontManager.addfont(r'{_font_path}')\n"
+                f"except Exception:\n"
+                f"    pass\n"
+                "plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']\n"
+                "plt.rcParams['axes.unicode_minus'] = False\n"
+            )
+            code = _font_inject + code
 
         _savefig_calls = re.findall(r'plt\.savefig\(([^)]+(?:\([^)]*\)[^)]*)*)\)', code)
         for _call in _savefig_calls:

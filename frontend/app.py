@@ -1,7 +1,4 @@
-# ===== 必须在所有 import 之前：全局中文字体初始化 =====
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
-
+# ===== 必须在所有 import 之前：下载中文字体 =====
 import os
 from pathlib import Path
 import requests
@@ -19,30 +16,9 @@ if not FONT_PATH.exists():
         f.write(resp.content)
     print("中文字体下载完成")
 
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-
-# 注册字体文件（兼容 Python 3.14+）
-_FONT_NAME = "WenQuanYi Zen Hei"
-try:
-    fm.fontManager.addfont(str(FONT_PATH))
-    _font_prop = fm.FontProperties(fname=str(FONT_PATH))
-    _FONT_NAME = _font_prop.get_name() or _FONT_NAME
-except Exception:
-    # addfont 在新版 Python 上可能失败，直接用文件路径
-    _FONT_NAME = str(FONT_PATH)
-
-print(f"中文字体已注册: {_FONT_NAME}")
-
-# 全局设置
-plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["font.sans-serif"] = [_FONT_NAME, "DejaVu Sans"]
-plt.rcParams["axes.unicode_minus"] = False
-
-# 存为环境变量供 agent.py 使用
 os.environ["CN_FONT_PATH"] = str(FONT_PATH)
-os.environ["CN_FONT_NAME"] = _FONT_NAME
-# ===== 字体初始化完毕 =====
+print(f"中文字体路径: {FONT_PATH}")
+# ===== 字体下载完毕 =====
 
 import sys
 import uuid
