@@ -22,17 +22,16 @@ if not FONT_PATH.exists():
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
-# 注册字体文件
-fm.fontManager.addfont(str(FONT_PATH))
-# 重建缓存确保新字体被识别
+# 注册字体文件（兼容 Python 3.14+）
+_FONT_NAME = "WenQuanYi Zen Hei"
 try:
-    fm._load_fontmanager(try_read_cache=False)
+    fm.fontManager.addfont(str(FONT_PATH))
+    _font_prop = fm.FontProperties(fname=str(FONT_PATH))
+    _FONT_NAME = _font_prop.get_name() or _FONT_NAME
 except Exception:
-    pass
+    # addfont 在新版 Python 上可能失败，直接用文件路径
+    _FONT_NAME = str(FONT_PATH)
 
-# 获取字体名称
-_font_prop = fm.FontProperties(fname=str(FONT_PATH))
-_FONT_NAME = _font_prop.get_name()
 print(f"中文字体已注册: {_FONT_NAME}")
 
 # 全局设置
