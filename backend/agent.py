@@ -20,6 +20,11 @@ import base64
 
 # ----- 中文字体（Linux 优先） -----
 import matplotlib.font_manager as fm
+# 强制重建字体缓存（确保 packages.txt 安装的字体被识别）
+try:
+    fm._load_fontmanager(try_read_cache=False)
+except Exception:
+    pass
 _CN_FONT_CANDIDATES = [
     'WenQuanYi Zen Hei', 'WenQuanYi Micro Hei',
     'Noto Sans CJK SC', 'Noto Sans CJK', 'Noto Serif CJK SC',
