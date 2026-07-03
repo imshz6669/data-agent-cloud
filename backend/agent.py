@@ -167,22 +167,9 @@ def create_chart(file_id: str, chart_description: str) -> str:
 
     local_vars = {'df': df, 'pd': pd, 'np': np, 'plt': plt, 'sns': sns, 'io': io, 'base64': base64}
     try:
-        # 注入字体设置代码到 LLM 生成的代码头部（确保 exec 中也不会丢字体）
-        _font_path = os.environ.get("CN_FONT_PATH", "")
-        if _font_path:
-            _font_inject = (
-                "import matplotlib.pyplot as plt\n"
-                "import matplotlib.font_manager as _fm\n"
-                "import warnings\n"
-                "warnings.filterwarnings('ignore')\n"
-                f"try:\n"
-                f"    _fm.fontManager.addfont(r'{_font_path}')\n"
-                f"except Exception:\n"
-                f"    pass\n"
-                "plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']\n"
-                "plt.rcParams['axes.unicode_minus'] = False\n"
-            )
-            code = _font_inject + code
+        # exec 前确保 rcParams 未被 LLM 代码覆盖（全局已由 app.py 设置）
+        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
 
         _savefig_calls = re.findall(r'plt\.savefig\(([^)]+(?:\([^)]*\)[^)]*)*)\)', code)
         for _call in _savefig_calls:

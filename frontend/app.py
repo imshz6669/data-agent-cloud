@@ -1,26 +1,22 @@
-# ===== 必须在所有 import 之前：下载中文字体 =====
-import os
-from pathlib import Path
-import requests
+# ===== 必须在所有 import 之前：字体 & 后端初始化 =====
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
 
-FONT_DIR = Path("./fonts")
-FONT_PATH = FONT_DIR / "wqy-zenhei.ttc"
-FONT_URL = "https://github.com/chenqinghe/fonts/raw/master/wqy-zenhei/wqy-zenhei.ttc"
+import matplotlib
+matplotlib.use("Agg")  # Streamlit 无图形界面，必须指定后端
 
-if not FONT_DIR.exists():
-    FONT_DIR.mkdir()
-if not FONT_PATH.exists():
-    print("正在下载中文字体...")
-    resp = requests.get(FONT_URL, timeout=60)
-    with open(FONT_PATH, "wb") as f:
-        f.write(resp.content)
-    print("中文字体下载完成")
+import matplotlib.pyplot as plt
 
-os.environ["CN_FONT_PATH"] = str(FONT_PATH)
-print(f"中文字体路径: {FONT_PATH}")
-# ===== 字体下载完毕 =====
+# 全局强制设置中文字体（packages.txt 保证 fonts-wqy-zenhei 已安装）
+plt.rcParams.update({
+    "font.sans-serif": ["WenQuanYi Zen Hei", "DejaVu Sans"],
+    "axes.unicode_minus": False,
+    "font.family": "sans-serif",
+})
+# ===== 字体初始化完毕 =====
 
 import sys
+import os
 import uuid
 import base64
 import re
