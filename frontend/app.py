@@ -1,5 +1,31 @@
-import sys
+# ===== 必须在所有 import 之前：全局中文字体初始化 =====
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
+
 import os
+from pathlib import Path
+import requests
+
+FONT_DIR = Path("./fonts")
+FONT_PATH = FONT_DIR / "wqy-zenhei.ttc"
+FONT_URL = "https://github.com/chenqinghe/fonts/raw/master/wqy-zenhei/wqy-zenhei.ttc"
+
+if not FONT_DIR.exists():
+    FONT_DIR.mkdir()
+if not FONT_PATH.exists():
+    print("正在下载中文字体...")
+    resp = requests.get(FONT_URL, timeout=60)
+    with open(FONT_PATH, "wb") as f:
+        f.write(resp.content)
+    print("中文字体下载完成")
+
+import matplotlib.pyplot as plt
+plt.rcParams["font.family"] = "sans-serif"
+plt.rcParams["font.sans-serif"] = [str(FONT_PATH)]
+plt.rcParams["axes.unicode_minus"] = False
+# ===== 字体初始化完毕 =====
+
+import sys
 import uuid
 import base64
 import re
@@ -80,7 +106,7 @@ with st.sidebar:
     st.divider()
 
     if st.session_state.file_id:
-        st.caption(f"📎 当前数据已加载")
+        st.caption("📎 当前数据已加载")
     else:
         st.caption("⚠️ 请先上传数据文件")
 

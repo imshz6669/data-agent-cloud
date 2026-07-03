@@ -18,35 +18,7 @@ import seaborn as sns
 import io
 import base64
 
-# ----- 中文字体（Linux 优先，仿 data-agent 方式手动扫描字体目录） -----
-import matplotlib.font_manager as fm
-import glob as _font_glob
-
-# 强制重建字体缓存
-try:
-    fm._load_fontmanager(try_read_cache=False)
-except Exception:
-    pass
-
-# 手动扫描字体目录并 addfont（解决 WenQuanYi 可能不在 matplotlib 缓存中的问题）
-_CN_FONT_DIRS = ["/usr/share/fonts", "/usr/local/share/fonts", "/home/admin/.fonts"]
-_CN_FONT_PATTERNS = ["*wqy*", "*wenquan*", "*noto*cjk*", "*Noto*CJK*", "*SimHei*", "*simhei*",
-                     "*msyh*", "*yahei*", "*YaHei*", "*simsun*", "*SimSun*", "*kai*", "*Kai*"]
-for _fd in _CN_FONT_DIRS:
-    if os.path.exists(_fd):
-        for _pat in _CN_FONT_PATTERNS:
-            for _fp in _font_glob.glob(os.path.join(_fd, "**", _pat), recursive=True):
-                if os.path.isfile(_fp):
-                    try:
-                        fm.fontManager.addfont(_fp)
-                    except Exception:
-                        pass
-
-# 硬编码中文字体（packages.txt 保证 WenQuanYi Zen Hei 已安装）
-# 即使 matplotlib 缓存没检测到，LLM 生成的代码也会用这个字体
-_CN_FONT_NAME = 'WenQuanYi Zen Hei'
-plt.rcParams['font.sans-serif'] = [_CN_FONT_NAME, 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
+# 中文字体由 frontend/app.py 在导入前全局配置，此处无需重复设置
 
 from .tools import DATA_STORE, execute_nl2sql, analyze_data
 
@@ -148,7 +120,6 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "  · 聚合操作（groupby/sum/mean等）必须基于 df 的列，聚合结果与 describe 统计一致\n"
         "  · 图表中的数值必须与 df 原始数据或聚合结果完全一致，不得凭空产生\n"
         "规范要求（必须遵守，只生成 Python 代码，不要解释，base64 赋值给 img_base64）：\n"
-        f"  · 中文字体: plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']\n"
         "  · 科学计数法: 禁止！在数值轴上用 ax.yaxis.set_major_formatter(ScalarFormatter()) 或 try: plt.ticklabel_format(style='plain', axis='y') except: pass\n"
         "  · 数值标注: 柱状图用 plt.bar_label()，折线图在数据点标注，饼图设 autopct\n"
         "  · 标题: 必须含「分析维度+指标」如\"2017-2019年各渠道销售额柱状图\"，居中，字号>轴标签\n"
@@ -167,7 +138,6 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "import pandas as pd\n"
         "import numpy as np\n"
         "import io, base64\n"
-        "plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']\n"
         "plt.rcParams['axes.unicode_minus'] = False\n"
         "from matplotlib.ticker import ScalarFormatter\n"
         "try:\n"

@@ -32,6 +32,7 @@ Thumbs.db
 
 # Streamlit
 .streamlit/
+fonts/
 
 # uv
 uv.lock
