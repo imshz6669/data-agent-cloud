@@ -20,9 +20,29 @@ if not FONT_PATH.exists():
     print("中文字体下载完成")
 
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+
+# 注册字体文件
+fm.fontManager.addfont(str(FONT_PATH))
+# 重建缓存确保新字体被识别
+try:
+    fm._load_fontmanager(try_read_cache=False)
+except Exception:
+    pass
+
+# 获取字体名称
+_font_prop = fm.FontProperties(fname=str(FONT_PATH))
+_FONT_NAME = _font_prop.get_name()
+print(f"中文字体已注册: {_FONT_NAME}")
+
+# 全局设置
 plt.rcParams["font.family"] = "sans-serif"
-plt.rcParams["font.sans-serif"] = [str(FONT_PATH)]
+plt.rcParams["font.sans-serif"] = [_FONT_NAME, "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
+
+# 存为环境变量供 agent.py 使用
+os.environ["CN_FONT_PATH"] = str(FONT_PATH)
+os.environ["CN_FONT_NAME"] = _FONT_NAME
 # ===== 字体初始化完毕 =====
 
 import sys

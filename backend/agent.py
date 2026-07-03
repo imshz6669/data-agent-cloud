@@ -167,6 +167,15 @@ def create_chart(file_id: str, chart_description: str) -> str:
 
     local_vars = {'df': df, 'pd': pd, 'np': np, 'plt': plt, 'sns': sns, 'io': io, 'base64': base64}
     try:
+        # exec 前强制重新注册中文字体（防止 LLM 代码中 plt.figure() 重置 rcParams）
+        _font_path = os.environ.get("CN_FONT_PATH", "")
+        _font_name = os.environ.get("CN_FONT_NAME", "WenQuanYi Zen Hei")
+        if _font_path and os.path.exists(_font_path):
+            import matplotlib.font_manager as _fm
+            _fm.fontManager.addfont(_font_path)
+            plt.rcParams['font.sans-serif'] = [_font_name, 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
+
         _savefig_calls = re.findall(r'plt\.savefig\(([^)]+(?:\([^)]*\)[^)]*)*)\)', code)
         for _call in _savefig_calls:
             _first_arg = _call.split(',')[0].strip().strip("'").strip('"')
