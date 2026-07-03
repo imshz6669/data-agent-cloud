@@ -61,6 +61,11 @@ def execute_nl2sql(df: pd.DataFrame, question: str, llm) -> Tuple[str, pd.DataFr
         sql = sql[:-3]
     sql = sql.strip()
 
+    # 修复 LLM 生成 SQL 时常见缺空格问题
+    import re as _re
+    sql = _re.sub(r'(?i)(FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|JOIN|ON|AND|OR)(["\w])', r'\1 \2', sql)
+    sql = _re.sub(r'(\w)(FROM|WHERE|GROUP\s+BY|ORDER\s+BY)', r'\1 \2', sql)
+
     # 4) 执行 SQL
     result_df = pd.read_sql_query(sql, conn)
     conn.close()

@@ -18,13 +18,30 @@ import seaborn as sns
 import io
 import base64
 
-# ----- 中文字体（Linux 优先） -----
+# ----- 中文字体（Linux 优先，仿 data-agent 方式手动扫描字体目录） -----
 import matplotlib.font_manager as fm
-# 强制重建字体缓存（确保 packages.txt 安装的字体被识别）
+import glob as _font_glob
+
+# 强制重建字体缓存
 try:
     fm._load_fontmanager(try_read_cache=False)
 except Exception:
     pass
+
+# 手动扫描字体目录并 addfont（解决 WenQuanYi 可能不在 matplotlib 缓存中的问题）
+_CN_FONT_DIRS = ["/usr/share/fonts", "/usr/local/share/fonts", "/home/admin/.fonts"]
+_CN_FONT_PATTERNS = ["*wqy*", "*wenquan*", "*noto*cjk*", "*Noto*CJK*", "*SimHei*", "*simhei*",
+                     "*msyh*", "*yahei*", "*YaHei*", "*simsun*", "*SimSun*", "*kai*", "*Kai*"]
+for _fd in _CN_FONT_DIRS:
+    if os.path.exists(_fd):
+        for _pat in _CN_FONT_PATTERNS:
+            for _fp in _font_glob.glob(os.path.join(_fd, "**", _pat), recursive=True):
+                if os.path.isfile(_fp):
+                    try:
+                        fm.fontManager.addfont(_fp)
+                    except Exception:
+                        pass
+
 _CN_FONT_CANDIDATES = [
     'WenQuanYi Zen Hei', 'WenQuanYi Micro Hei',
     'Noto Sans CJK SC', 'Noto Sans CJK', 'Noto Serif CJK SC',
