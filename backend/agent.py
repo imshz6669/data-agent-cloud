@@ -42,18 +42,11 @@ for _fd in _CN_FONT_DIRS:
                     except Exception:
                         pass
 
-_CN_FONT_CANDIDATES = [
-    'WenQuanYi Zen Hei', 'WenQuanYi Micro Hei',
-    'Noto Sans CJK SC', 'Noto Sans CJK', 'Noto Serif CJK SC',
-    'Microsoft YaHei', 'SimHei', 'SimSun', 'KaiTi',
-]
-_available_fonts = {f.name for f in fm.fontManager.ttflist}
-_CN_FONT = next((f for f in _CN_FONT_CANDIDATES if f in _available_fonts), None)
-if _CN_FONT:
-    plt.rcParams['font.sans-serif'] = [_CN_FONT, 'DejaVu Sans']
-    plt.rcParams['axes.unicode_minus'] = False
-else:
-    plt.rcParams['axes.unicode_minus'] = False
+# 硬编码中文字体（packages.txt 保证 WenQuanYi Zen Hei 已安装）
+# 即使 matplotlib 缓存没检测到，LLM 生成的代码也会用这个字体
+_CN_FONT_NAME = 'WenQuanYi Zen Hei'
+plt.rcParams['font.sans-serif'] = [_CN_FONT_NAME, 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
 
 from .tools import DATA_STORE, execute_nl2sql, analyze_data
 
@@ -155,7 +148,7 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "  · 聚合操作（groupby/sum/mean等）必须基于 df 的列，聚合结果与 describe 统计一致\n"
         "  · 图表中的数值必须与 df 原始数据或聚合结果完全一致，不得凭空产生\n"
         "规范要求（必须遵守，只生成 Python 代码，不要解释，base64 赋值给 img_base64）：\n"
-        f"  · 中文字体: plt.rcParams['font.sans-serif'] = {[_CN_FONT] if _CN_FONT else ['DejaVu Sans']}\n"
+        f"  · 中文字体: plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']\n"
         "  · 科学计数法: 禁止！在数值轴上用 ax.yaxis.set_major_formatter(ScalarFormatter()) 或 try: plt.ticklabel_format(style='plain', axis='y') except: pass\n"
         "  · 数值标注: 柱状图用 plt.bar_label()，折线图在数据点标注，饼图设 autopct\n"
         "  · 标题: 必须含「分析维度+指标」如\"2017-2019年各渠道销售额柱状图\"，居中，字号>轴标签\n"
@@ -174,7 +167,7 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "import pandas as pd\n"
         "import numpy as np\n"
         "import io, base64\n"
-        f"plt.rcParams['font.sans-serif'] = {[_CN_FONT] if _CN_FONT else ['DejaVu Sans']}\n"
+        "plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']\n"
         "plt.rcParams['axes.unicode_minus'] = False\n"
         "from matplotlib.ticker import ScalarFormatter\n"
         "try:\n"
