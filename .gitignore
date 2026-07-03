@@ -15,6 +15,11 @@ wheels/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
+
+# Chart output (prevent accidental commits)
+*.png
 
 # IDE
 .idea/

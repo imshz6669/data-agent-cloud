@@ -168,9 +168,17 @@ for msg in st.session_state.messages:
                 for ps in msg["process_steps"]:
                     st.caption(f"**{ps['step']}**")
                     st.code(ps['detail'], language=None)
-        chart_bytes = decode_chart(msg.get("chart"))
-        if chart_bytes:
-            st.image(chart_bytes)
+        charts = msg.get("charts", [])
+        if not charts:
+            # 兼容旧格式：单个 chart 字符串
+            chart_bytes = decode_chart(msg.get("chart"))
+            if chart_bytes:
+                st.image(chart_bytes)
+        else:
+            for chart_b64 in charts:
+                chart_bytes = decode_chart(chart_b64)
+                if chart_bytes:
+                    st.image(chart_bytes)
 
 # --- 输入 ---
 if prompt := st.chat_input("输入你的分析需求…"):
@@ -190,7 +198,7 @@ if prompt := st.chat_input("输入你的分析需求…"):
                 if resp.status_code == 200:
                     data = resp.json()
                     reply = data["reply"]
-                    chart = data.get("chart")
+                    charts = data.get("charts", [])
                     process_steps = data.get("process_steps", [])
                     st.markdown(reply)
                     # 分析完成后展示过程（可收起）
@@ -199,13 +207,14 @@ if prompt := st.chat_input("输入你的分析需求…"):
                             for ps in process_steps:
                                 st.caption(f"**{ps['step']}**")
                                 st.code(ps['detail'], language=None)
-                    chart_bytes = decode_chart(chart)
-                    if chart_bytes:
-                        st.image(chart_bytes)
+                    for chart_b64 in charts:
+                        chart_bytes = decode_chart(chart_b64)
+                        if chart_bytes:
+                            st.image(chart_bytes)
                     st.session_state.messages.append({
                         "role": "assistant",
                         "content": reply,
-                        "chart": chart,
+                        "charts": charts,
                         "process_steps": process_steps
                     })
                     load_thread_list()

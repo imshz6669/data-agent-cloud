@@ -58,7 +58,7 @@ class AgentState(TypedDict):
 load_dotenv()
 
 llm = ChatOpenAI(
-    model="deepseek-v4-pro",
+    model="deepseek-v4-flash",
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
     temperature=0,
@@ -89,7 +89,7 @@ def query_data(file_id: str, question: str) -> str:
 
 @tool
 def compute_data(file_id: str, code: str) -> str:
-    """对数据执行 Pandas 分析代码，df 表示数据框，结果赋值给 result。"""
+    """对数据执行 Pandas 分析代码，df 表示数据框，结果赋值给 result。禁止绘图（不要用 plt/matplotlib），只做数据计算。"""
     df = DATA_STORE.get(file_id)
     if df is None:
         return "错误：文件不存在。"
@@ -117,21 +117,49 @@ def _extract_chart_type(msg: str) -> str:
 
 @tool
 def create_chart(file_id: str, chart_description: str) -> str:
-    """根据描述生成图表。chart_spec 已由系统自动从用户消息提取，请使用 chart_description 传用户原文。"""
+    """根据描述生成图表。"""
     import builtins
 
     df = DATA_STORE.get(file_id)
     if df is None:
         return "错误：文件不存在。"
 
+    # 生成数据统计概览
+    _stats_lines = [f"数据行数: {len(df)}, 列数: {len(df.columns)}"]
+    for _col in df.columns:
+        _dtype = df[_col].dtype
+        if _dtype in ('int64', 'float64'):
+            _stats_lines.append(f"  {_col}({_dtype}): min={df[_col].min()}, max={df[_col].max()}, mean={df[_col].mean():.2f}")
+        else:
+            _uvals = df[_col].dropna().unique()
+            _stats_lines.append(f"  {_col}({_dtype}): 唯一值={len(_uvals)}个 → {list(_uvals[:8])}{'…' if len(_uvals) > 8 else ''}")
+
     prompt = (
         "你是数据可视化专家。根据数据和描述写出 Matplotlib 绘图代码。\n"
         f"数据列名: {list(df.columns)}\n"
         f"数据前5行:\n{df.head().to_string()}\n"
+        f"数据统计:\n" + "\n".join(_stats_lines) + "\n\n"
         f"图表描述: {chart_description}\n\n"
-        "要求: 只生成 Python 代码，不要解释。必须将 base64 赋值给 img_base64。\n"
-        f"⚠️ 中文标签前必须设置: plt.rcParams['font.sans-serif'] = {[_CN_FONT] if _CN_FONT else ['DejaVu Sans']}\n"
-        "代码模板:\n"
+        "🚫 严禁 plt.savefig('xxx.png') 保存到文件！必须严格按代码模板用 io.BytesIO + base64 编码。\n"
+        "⚠️ 数据约束（必须遵守）：\n"
+        "  · 严格使用提供的 df 变量操作，禁止自己编造数据或硬编码数值\n"
+        "  · 分类分组必须用 df 中实际存在的列，不得假设不存在的列名\n"
+        "  · 聚合操作（groupby/sum/mean等）必须基于 df 的列，聚合结果与 describe 统计一致\n"
+        "  · 图表中的数值必须与 df 原始数据或聚合结果完全一致，不得凭空产生\n"
+        "规范要求（必须遵守，只生成 Python 代码，不要解释，base64 赋值给 img_base64）：\n"
+        f"  · 中文字体: plt.rcParams['font.sans-serif'] = {[_CN_FONT] if _CN_FONT else ['DejaVu Sans']}\n"
+        "  · 科学计数法: 禁止！在数值轴上用 ax.yaxis.set_major_formatter(ScalarFormatter()) 或 try: plt.ticklabel_format(style='plain', axis='y') except: pass\n"
+        "  · 数值标注: 柱状图用 plt.bar_label()，折线图在数据点标注，饼图设 autopct\n"
+        "  · 标题: 必须含「分析维度+指标」如\"2017-2019年各渠道销售额柱状图\"，居中，字号>轴标签\n"
+        "  · X/Y轴: 标注名称+单位（如\"销售额（元）\"），分类变量显示全部分组；Y轴若为金额/数量须从0起始\n"
+        "  · 图例: 多系列必须添加图例，置于右上角不遮挡数据；单系列可省略\n"
+        "  · 画布: figsize=(9,6)，高区分度配色，浅灰虚线网格\n"
+        "  · 柱状图: Y轴从0起，柱顶 bar_label 标注，多分组并列+图例\n"
+        "  · 折线图: X轴时间序列，不同线型+颜色+拐点标记('-o')，仅用于趋势非离散对比\n"
+        "  · 箱体图: 每分类独立完整箱体(含Q1/中位/须)，异常值显示，中位线加粗(lw=2)。⚠️ 参数名是 label 不是 labels，用 tick_labels 设X轴标签。\n"
+        "  · 饼图: ≤6类，标注百分比\n"
+        "  · 直方图: 均匀区间；散点图: 标注自变量/因变量含义\n"
+        "代码模板（唯一正确输出方式，必须完全按此模式）：\n"
         "```python\n"
         "import matplotlib.pyplot as plt\n"
         "import seaborn as sns\n"
@@ -140,12 +168,22 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "import io, base64\n"
         f"plt.rcParams['font.sans-serif'] = {[_CN_FONT] if _CN_FONT else ['DejaVu Sans']}\n"
         "plt.rcParams['axes.unicode_minus'] = False\n"
+        "from matplotlib.ticker import ScalarFormatter\n"
+        "try:\n"
+        "    plt.gca().yaxis.set_major_formatter(ScalarFormatter())\n"
+        "    plt.ticklabel_format(style='plain', axis='y')\n"
+        "except Exception:\n"
+        "    pass  # 分类轴不适用\n"
+        "plt.figure(figsize=(9,6))\n"
+        "plt.grid(True, linestyle='--', alpha=0.3)\n"
         "# 绘图代码\n"
-        "buf = io.BytesIO()\n"
+        "# 箱体图: plt.boxplot(..., tick_labels=分类名) NOT labels=！参数是 tick_labels 不是 labels\n"
+        "# 柱体必须 bar_label，折线必须标注数据点，饼图必须 autopct\n"
+        "buf = io.BytesIO()        # ← 必须用 BytesIO，禁止 plt.savefig('文件.png')\n"
         "plt.savefig(buf, format='png', bbox_inches='tight')\n"
         "plt.close()\n"
         "buf.seek(0)\n"
-        "img_base64 = base64.b64encode(buf.read()).decode('utf-8')\n"
+        "img_base64 = base64.b64encode(buf.read()).decode('utf-8')  # ← 必须赋值 img_base64\n"
         "```"
     )
 
@@ -158,7 +196,26 @@ def create_chart(file_id: str, chart_description: str) -> str:
 
     local_vars = {'df': df, 'pd': pd, 'np': np, 'plt': plt, 'sns': sns, 'io': io, 'base64': base64}
     try:
+        # 静态检查：禁止 plt.savefig 写到文件（必须用 buf）
+        _savefig_calls = re.findall(r'plt\.savefig\(([^)]+(?:\([^)]*\)[^)]*)*)\)', code)
+        for _call in _savefig_calls:
+            _first_arg = _call.split(',')[0].strip().strip("'").strip('"')
+            if _first_arg != 'buf':
+                return "错误：plt.savefig 写到了文件而非 buf！必须用 plt.savefig(buf, format='png', bbox_inches='tight')，严禁保存为磁盘文件。请修正代码。"
+
+        # 防御：记录 exec 前已有的 png，exec 后清理新增的
+        import glob as _glob
+        _png_before = set(_glob.glob("*.png"))
+
         exec(code, {"__builtins__": builtins.__dict__}, local_vars)
+
+        # 清理泄漏的 png 文件
+        for _fp in set(_glob.glob("*.png")) - _png_before:
+            try:
+                os.remove(_fp)
+            except Exception:
+                pass
+
         img = local_vars.get('img_base64', '')
         if not img:
             return "图表生成失败：未产生图片。"
@@ -179,7 +236,8 @@ SYSTEM_PROMPT = (
     "你是专业的数据分析助手，可以加载数据、查询、计算、生成图表。请始终优先使用工具，最后用中文总结。\n\n"
     "图表规格(chart_spec)已自动从用户消息提取并存入State。chart_spec值为空表示用户没要求画图，"
     "值为 bar/line/pie/scatter/hist/box 时表示用户指定了对应图表类型。"
-    "生成图表时请参考 chart_spec 选择合适的图表类型。"
+    "生成图表时请参考 chart_spec 选择合适的图表类型。\n"
+    "⚠️ 回复中禁止提及文件路径（如'保存为 xxx.png'、'文件已保存至'等），图表已通过工具自动返回前端展示。\n"
     "每次处理用户提问时都必须独立处理，以当前用户消息中的明确指示为准。"
 )
 
@@ -229,13 +287,20 @@ def process_chat(thread_id: str, user_message: str) -> Dict[str, Any]:
     # 从当前用户消息提取 chart_spec（每次覆盖，不累积）
     chart_spec = _extract_chart_type(user_message)
 
+    # 记录 invoke 前的消息数，用于后续只处理当前轮次新增的消息
+    state_before = agent.get_state(config)
+    msg_count_before = len(state_before.values.get("messages", [])) if state_before and state_before.values else 0
+
     result = agent.invoke(
         {"messages": [HumanMessage(content=user_message)], "chart_spec": chart_spec, "remaining_steps": 20},
         config=config
     )
 
+    # 只处理当前轮次新增的消息
+    new_messages = result.get("messages", [])[msg_count_before:]
+
     process_steps = []
-    for msg in result.get("messages", []):
+    for msg in new_messages:
         if hasattr(msg, "tool_calls") and msg.tool_calls:
             for tc in msg.tool_calls:
                 name = tc.get("name", "?")
@@ -250,13 +315,11 @@ def process_chat(thread_id: str, user_message: str) -> Dict[str, Any]:
             else:
                 process_steps.append({"step": "✅ 结果", "detail": content[:200]})
 
-    chart_base64 = None
-    for msg in result.get("messages", []):
+    charts = []
+    for msg in new_messages:
         if hasattr(msg, "type") and msg.type == "tool":
-            m = re.search(r'CHART_IMG:([A-Za-z0-9+/=]+)', str(msg.content))
-            if m:
-                chart_base64 = f"data:image/png;base64,{m.group(1)}"
-                # 不 break，取最后一张图（确保是当前请求生成的）
+            for m in re.finditer(r'CHART_IMG:([A-Za-z0-9+/=]+)', str(msg.content)):
+                charts.append(f"data:image/png;base64,{m.group(1)}")
 
     last_msg = result["messages"][-1] if result.get("messages") else HumanMessage(content="")
     reply = last_msg.content if hasattr(last_msg, "content") else ""
@@ -264,4 +327,4 @@ def process_chat(thread_id: str, user_message: str) -> Dict[str, Any]:
     reply = re.sub(r'CHART_IMG:?\s*', '', reply)
     reply = re.sub(r'\n\s*\n', '\n\n', reply).strip()
 
-    return {"reply": reply, "chart": chart_base64, "process_steps": process_steps}
+    return {"reply": reply, "charts": charts, "process_steps": process_steps}

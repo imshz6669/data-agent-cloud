@@ -29,7 +29,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
-    chart: Optional[str] = None
+    charts: list[str] = []
     process_steps: list = []
 
 # ---------- 接口 ----------

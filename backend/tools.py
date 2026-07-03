@@ -43,6 +43,12 @@ def execute_nl2sql(df: pd.DataFrame, question: str, llm) -> Tuple[str, pd.DataFr
 数据库使用的是 SQLite，表结构和示例数据如下：
 {schema}
 
+⚠️ SQLite 限制（禁止使用以下语法）：
+- 不支持 ROLLUP / CUBE / GROUPING SETS → 需要汇总行请手动 UNION ALL 或分开查询
+- 不支持窗口函数外的 OVER 子句中 ORDER BY 与聚合混用
+- 不支持 FULL OUTER JOIN，请用 LEFT JOIN + UNION + RIGHT JOIN 替代
+- 列名如含中文或特殊字符，务必用双引号包裹
+
 问题: {question}
 
 请只返回 SQL 语句，不要包含其他解释或标记。"""
