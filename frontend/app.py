@@ -205,36 +205,42 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     if uploaded_file is not None:
-        with st.spinner("解析文件中..."):
-            try:
-                df = parse_uploaded_file(
-                    uploaded_file.getvalue(), uploaded_file.name
-                )
-                file_id = str(uuid.uuid4())
-                DATA_STORE[file_id] = df
-                st.session_state.file_id = file_id
-                st.session_state.file_name = uploaded_file.name
-                st.session_state.full_df = df.copy()
-                st.session_state.messages = []
-                st.session_state.time_filters = {}
-                st.session_state.category_filters = {}
-                st.session_state._report_running = False
-                st.session_state._report_stage = 0
+        # 去重：同一文件不重复处理（避免每次 rerun 重新提取维度 → 死循环）
+        file_key = f"{uploaded_file.name}_{uploaded_file.size}"
+        if st.session_state.get("_last_upload_key") == file_key:
+            pass  # 已处理过，跳过
+        else:
+            st.session_state._last_upload_key = file_key
+            with st.spinner("解析文件中..."):
+                try:
+                    df = parse_uploaded_file(
+                        uploaded_file.getvalue(), uploaded_file.name
+                    )
+                    file_id = str(uuid.uuid4())
+                    DATA_STORE[file_id] = df
+                    st.session_state.file_id = file_id
+                    st.session_state.file_name = uploaded_file.name
+                    st.session_state.full_df = df.copy()
+                    st.session_state.messages = []
+                    st.session_state.time_filters = {}
+                    st.session_state.category_filters = {}
+                    st.session_state._report_running = False
+                    st.session_state._report_stage = 0
 
-                # 提取维度（带缓存）
-                dims = extract_dimensions(df)
-                st.session_state.dimensions = dims
+                    # 提取维度
+                    dims = extract_dimensions(df)
+                    st.session_state.dimensions = dims
 
-                st.success(f"✅ {uploaded_file.name} 已加载")
-                n_time = len(dims.get("time", []))
-                n_cat = len(dims.get("category", []))
-                st.caption(
-                    f"行数: {len(df)} · 列数: {len(df.columns)}"
-                    f"{' · 时间列: ' + str(n_time) + '个' if n_time else ''}"
-                    f"{' · 分类列: ' + str(n_cat) + '个' if n_cat else ''}"
-                )
-            except Exception as e:
-                st.error(f"上传失败: {e}")
+                    st.success(f"✅ {uploaded_file.name} 已加载")
+                    n_time = len(dims.get("time", []))
+                    n_cat = len(dims.get("category", []))
+                    st.caption(
+                        f"行数: {len(df)} · 列数: {len(df.columns)}"
+                        f"{' · 时间列: ' + str(n_time) + '个' if n_time else ''}"
+                        f"{' · 分类列: ' + str(n_cat) + '个' if n_cat else ''}"
+                    )
+                except Exception as e:
+                    st.error(f"上传失败: {e}")
 
     # ── 维度过滤 ──
     dims = st.session_state.get("dimensions", {})

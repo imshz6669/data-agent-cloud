@@ -2,10 +2,10 @@
 维度自动识别与过滤（Task 1）。
 - 用 pd.to_datetime + PeriodIndex 替代手写正则，覆盖更多日期格式
 - 自动探测分类列（城市、渠道等）作为候选维度
-- 纯函数，无 Streamlit 依赖；缓存由 app.py 的 @st.cache_data 处理
 """
+import warnings
 import pandas as pd
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 
 
 # ─── 维度提取 ───────────────────────────────────────────────
@@ -39,10 +39,12 @@ def extract_dimensions(df: pd.DataFrame) -> Dict[str, List[Dict]]:
 def _try_time_column(series: pd.Series) -> Optional[List[str]]:
     """尝试将列解析为日期，提取 YYYY-MM 格式的周期列表。"""
     # pd.to_datetime 覆盖绝大多数日期格式
-    try:
-        dt = pd.to_datetime(series, errors="coerce")
-    except Exception:
-        return None
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Could not infer format")
+        try:
+            dt = pd.to_datetime(series, errors="coerce")
+        except Exception:
+            return None
 
     valid_ratio = dt.notna().sum() / max(len(series), 1)
     if valid_ratio < 0.7:  # 少于 70% 可解析 → 不算日期列
