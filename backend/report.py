@@ -163,104 +163,133 @@ def generate_full_report(
     time_col: str = "",
     llm=None,
 ) -> dict:
-    # LLM 列识别（优先），失败则回退启发式
-    meta = _llm_detect_columns(df, llm) if llm else None
+    """生成完整报告。每个环节独立 try/except，保证部分失败时仍产出报告。"""
+    # ── 列识别 ──
+    meta = None
+    try:
+        meta = _llm_detect_columns(df, llm) if llm else None
+    except Exception:
+        pass
     if not meta:
-        meta = _detect_columns(df)
+        try:
+            meta = _detect_columns(df)
+        except Exception:
+            meta = {"sales_cols": [], "qty_cols": [], "price_cols": [],
+                    "cat_cols": [], "numeric_cols": [], "time_cols": []}
+
+    # ── 数值列清理 ──
+    try:
+        for col in set(meta.get("numeric_cols", [])):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    except Exception:
+        pass
 
     charts: list = []
     steps: list = []
     all_findings_parts: list = []
+    errors_log: list = []
 
-    # ── 将所有识别出的数值列强制转换为纯数值，防止混入的字符串导致 .sum() 拼接 ──
-    for col in set(meta["numeric_cols"]):
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # ── 自动识别时间粒度 ──
-    granularity = _detect_granularity(df, time_col) if time_col else "M"
+    # ── 粒度 ──
+    granularity = "M"
+    try:
+        granularity = _detect_granularity(df, time_col) if time_col else "M"
+    except Exception:
+        pass
 
     # ════════════════════════════════════════════════
     #  1. 数据概览
     # ════════════════════════════════════════════════
+    overview = "## 数据概览\n\n"
     rows = len(df)
-    period = _detect_period(df, time_col) if time_col else ""
-    period_short = _detect_period_short(df, time_col) if time_col else ""
-    overview = f"## 数据概览\n\n"
-    if period:
-        overview += f"- **报告周期**：{period}\n"
-    if file_name:
-        overview += f"- **数据来源**：{file_name}\n"
-    overview += f"- **数据行数**：{rows} 条\n"
-    overview += f"- **数据列数**：{len(df.columns)} 列\n"
-    col_debug = (f"销售额列={meta['sales_cols']}, 数量列={meta['qty_cols']}, "
-                 f"分类列={meta['cat_cols']}, 时间列={meta['time_cols']}")
-    steps.append({"step": "数据概览", "detail": f"{rows}行 × {len(df.columns)}列 | {col_debug}"})
+    period = ""
+    period_short = ""
+    try:
+        period = _detect_period(df, time_col) if time_col else ""
+        period_short = _detect_period_short(df, time_col) if time_col else ""
+        if period:
+            overview += f"- **报告周期**：{period}\n"
+        if file_name:
+            overview += f"- **数据来源**：{file_name}\n"
+        overview += f"- **数据行数**：{rows} 条\n"
+        overview += f"- **数据列数**：{len(df.columns)} 列\n"
+        col_debug = (f"销售额列={meta.get('sales_cols',[])}, 数量列={meta.get('qty_cols',[])}, "
+                     f"分类列={meta.get('cat_cols',[])}, 时间列={meta.get('time_cols',[])}")
+        steps.append({"step": "数据概览", "detail": f"{rows}行 × {len(df.columns)}列 | {col_debug}"})
+    except Exception as e:
+        errors_log.append(f"数据概览: {e}")
+        overview += f"> ⚠️ 数据概览生成失败: {e}\n\n"
 
     # ════════════════════════════════════════════════
     #  2. 核心指标卡
     # ════════════════════════════════════════════════
     kpi_lines = []
     kpi_text = ""
-
-    sales_col = meta["sales_cols"][0] if meta["sales_cols"] else (
-        meta["numeric_cols"][0] if meta["numeric_cols"] else None
-    )
+    sales_col = None
     total_sales = None
-    if sales_col:
-        try:
-            _s = _safe_sum(df[sales_col])
-            total_sales = round(_s, 2)
-        except Exception:
-            total_sales = None
-        if total_sales is not None:
-            kpi_lines.append(f"| 总销售额 | **{total_sales:,.2f}** |")
-            kpi_text += f"总销售额 {total_sales:,.2f}"
-
-    qty_col = meta["qty_cols"][0] if meta["qty_cols"] else None
+    qty_col = None
     total_qty = None
-    if qty_col:
-        try:
-            _q = _safe_sum(df[qty_col])
-            total_qty = int(_q)
-        except Exception:
-            total_qty = None
-        if total_qty is not None:
-            kpi_lines.append(f"| 总订单量 | **{total_qty:,}** |")
-            kpi_text += f"，总订单量 {total_qty:,}"
-
-    avg_price = None
-    if total_sales and total_qty and total_qty > 0:
-        avg_price = round(total_sales / total_qty, 2)
-        kpi_lines.append(f"| 平均客单价 | **{avg_price:,.2f}** |")
-        kpi_text += f"，平均客单价 {avg_price:,.2f}"
-
-    # 环比
     mom_text = ""
-    if time_col and total_sales is not None:
-        mom = _compute_mom(df, time_col, sales_col, granularity)
-        if mom is not None:
-            arrow = "↑" if mom > 0 else "↓" if mom < 0 else "→"
-            kpi_lines.append(f"| 环比变化 | **{arrow} {abs(mom):.1f}%** |")
-            mom_text = f"，环比{mom:+.1f}%"
-
-    # 同比
     yoy_text = ""
-    if time_col and total_sales is not None:
-        yoy = _compute_yoy(df, time_col, sales_col)
-        if yoy is not None:
-            arrow_y = "↑" if yoy > 0 else "↓" if yoy < 0 else "→"
-            kpi_lines.append(f"| 同比变化 | **{arrow_y} {abs(yoy):.1f}%** |")
-            yoy_text = f"，同比{yoy:+.1f}%"
+    one_liner = ""
+    try:
+        sales_col = meta.get("sales_cols", [None])[0] if meta.get("sales_cols") else (
+            meta.get("numeric_cols", [None])[0] if meta.get("numeric_cols") else None
+        )
+        if sales_col and sales_col in df.columns:
+            try:
+                _s = _safe_sum(df[sales_col])
+                total_sales = round(_s, 2)
+                kpi_lines.append(f"| 总销售额 | **{total_sales:,.2f}** |")
+                kpi_text += f"总销售额 {total_sales:,.2f}"
+            except Exception as e:
+                errors_log.append(f"总销售额: {e}")
 
+        qty_col = meta.get("qty_cols", [None])[0] if meta.get("qty_cols") else None
+        if qty_col and qty_col in df.columns:
+            try:
+                _q = _safe_sum(df[qty_col])
+                total_qty = int(_q)
+                kpi_lines.append(f"| 总订单量 | **{total_qty:,}** |")
+                kpi_text += f"，总订单量 {total_qty:,}"
+            except Exception as e:
+                errors_log.append(f"总订单量: {e}")
+
+        if total_sales and total_qty and total_qty > 0:
+            avg_price = round(total_sales / total_qty, 2)
+            kpi_lines.append(f"| 平均客单价 | **{avg_price:,.2f}** |")
+            kpi_text += f"，平均客单价 {avg_price:,.2f}"
+
+        if time_col and total_sales is not None:
+            try:
+                mom = _compute_mom(df, time_col, sales_col, granularity)
+                if mom is not None:
+                    arrow = "↑" if mom > 0 else "↓" if mom < 0 else "→"
+                    kpi_lines.append(f"| 环比变化 | **{arrow} {abs(mom):.1f}%** |")
+                    mom_text = f"，环比{mom:+.1f}%"
+            except Exception as e:
+                errors_log.append(f"环比: {e}")
+
+        if time_col and total_sales is not None:
+            try:
+                yoy = _compute_yoy(df, time_col, sales_col)
+                if yoy is not None:
+                    arrow_y = "↑" if yoy > 0 else "↓" if yoy < 0 else "→"
+                    kpi_lines.append(f"| 同比变化 | **{arrow_y} {abs(yoy):.1f}%** |")
+                    yoy_text = f"，同比{yoy:+.1f}%"
+            except Exception as e:
+                errors_log.append(f"同比: {e}")
+    except Exception as e:
+        errors_log.append(f"核心指标整体: {e}")
+
+    kpi_section = ""
     if kpi_lines:
         kpi_section = "## 核心指标\n\n| 指标 | 数值 |\n|------|------|\n" + "\n".join(kpi_lines) + "\n"
-    else:
-        kpi_section = ""
 
-    # 一句话结论（由 AI 生成，填入概览末尾）
-    one_liner = ""
     if llm:
-        one_liner = _generate_one_liner(kpi_text, mom_text, yoy_text, period_short)
+        try:
+            one_liner = _generate_one_liner(kpi_text, mom_text, yoy_text, period_short)
+        except Exception:
+            pass
     if one_liner:
         overview += f"\n> {one_liner}\n"
 
@@ -269,57 +298,71 @@ def generate_full_report(
     # ════════════════════════════════════════════════
     #  3. 趋势可视化
     # ════════════════════════════════════════════════
-    if time_col and sales_col and meta["numeric_cols"]:
-        trend_charts = _build_trend_charts(df, time_col, sales_col, granularity)
-        charts.extend(trend_charts["charts"])
-        steps.extend(trend_charts["steps"])
-        if trend_charts.get("outlier_text"):
-            all_findings_parts.append(trend_charts["outlier_text"])
+    try:
+        tcol = time_col if isinstance(time_col, str) else None
+        if tcol and sales_col and meta.get("numeric_cols"):
+            trend_charts = _build_trend_charts(df, tcol, sales_col, granularity)
+            charts.extend(trend_charts.get("charts", []))
+            steps.extend(trend_charts.get("steps", []))
+            if trend_charts.get("outlier_text"):
+                all_findings_parts.append(trend_charts["outlier_text"])
+    except Exception as e:
+        errors_log.append(f"趋势可视化: {e}")
 
     # ════════════════════════════════════════════════
-    #  4. 分类对比图
+    #  4. 分类对比
     # ════════════════════════════════════════════════
-    cat_col = meta["cat_cols"][0] if meta["cat_cols"] else None
     cat_text_parts = []
-    if cat_col and sales_col:
-        # 分类柱状图
-        top = df.groupby(cat_col)[sales_col].apply(_safe_sum).sort_values(ascending=False)
-        img = _bar_chart(top.index.tolist(), top.values.tolist(), cat_col, sales_col)
-        if img:
-            charts.append(img)
-            steps.append({"step": "分类对比", "detail": f"{cat_col} × {sales_col} Top10"})
+    try:
+        cat_col = meta.get("cat_cols", [None])[0] if meta.get("cat_cols") else None
+        if cat_col and sales_col and cat_col in df.columns and sales_col in df.columns:
+            try:
+                top = df.groupby(cat_col)[sales_col].apply(_safe_sum).sort_values(ascending=False)
+                img = _bar_chart(top.index.tolist(), top.values.tolist(), cat_col, sales_col)
+                if img:
+                    charts.append(img)
+                    steps.append({"step": "分类对比", "detail": f"{cat_col} × {sales_col} Top10"})
+            except Exception:
+                pass
 
-        # 分类文字分析（top3 / bottom3）
-        if len(top) >= 2:
-            top3 = top.head(3)
-            bot3 = top.tail(3)
-            cat_text_parts.append(f"**表现最好的3个{cat_col}**：")
-            for i, (k, v) in enumerate(top3.items(), 1):
-                pct = v / top.sum() * 100
-                cat_text_parts.append(f"{i}. {k}（{v:,.0f}，占比{pct:.1f}%）")
-            if len(top) >= 4:
-                cat_text_parts.append(f"\n**表现最差的3个{cat_col}**：")
-                for i, (k, v) in enumerate(bot3.items(), 1):
-                    pct = v / top.sum() * 100
-                    cat_text_parts.append(f"{i}. {k}（{v:,.0f}，占比{pct:.1f}%）")
+            try:
+                if len(top) >= 2:
+                    top_total = _safe_sum(top)
+                    top3 = top.head(3)
+                    bot3 = top.tail(3)
+                    cat_text_parts.append(f"**表现最好的3个{cat_col}**：")
+                    for i, (k, v) in enumerate(top3.items(), 1):
+                        pct = v / top_total * 100 if top_total else 0
+                        cat_text_parts.append(f"{i}. {k}（{v:,.0f}，占比{pct:.1f}%）")
+                    if len(top) >= 4:
+                        cat_text_parts.append(f"\n**表现最差的3个{cat_col}**：")
+                        for i, (k, v) in enumerate(bot3.items(), 1):
+                            pct = v / top_total * 100 if top_total else 0
+                            cat_text_parts.append(f"{i}. {k}（{v:,.0f}，占比{pct:.1f}%）")
+            except Exception:
+                pass
+    except Exception as e:
+        errors_log.append(f"分类对比: {e}")
 
     # ════════════════════════════════════════════════
-    #  5. 关键发现（AI 增强）
+    #  5. 关键发现
     # ════════════════════════════════════════════════
     findings = ""
-    if llm and (
-        one_liner or kpi_text or mom_text or yoy_text or cat_text_parts or all_findings_parts
-    ):
-        findings = _generate_findings(
-            df, meta, kpi_text, mom_text, yoy_text,
-            time_col, period_short, "\n".join(cat_text_parts),
-            "\n".join(all_findings_parts), llm,
-        )
-        if findings:
-            steps.append({"step": "AI洞察", "detail": findings[:120]})
+    try:
+        if llm and (one_liner or kpi_text or mom_text or yoy_text or cat_text_parts or all_findings_parts):
+            findings = _generate_findings(
+                df, meta, kpi_text, mom_text, yoy_text,
+                time_col, period_short,
+                "\n".join(cat_text_parts),
+                "\n".join(all_findings_parts), llm,
+            )
+            if findings:
+                steps.append({"step": "AI洞察", "detail": findings[:120]})
+    except Exception as e:
+        errors_log.append(f"AI洞察: {e}")
 
     # ════════════════════════════════════════════════
-    #  拼接最终回复
+    #  拼接
     # ════════════════════════════════════════════════
     reply = overview + "\n" + kpi_section
 
@@ -328,6 +371,9 @@ def generate_full_report(
 
     if findings:
         reply += f"\n## 关键发现\n\n{findings}\n"
+
+    if errors_log:
+        reply += f"\n---\n\n> ⚠️ **部分环节生成失败**：\n> " + "\n> ".join(errors_log) + "\n"
 
     return {
         "reply": reply.strip(),

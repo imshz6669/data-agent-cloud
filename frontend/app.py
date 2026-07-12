@@ -43,6 +43,7 @@ import os
 import uuid
 import base64
 import re
+import traceback
 from datetime import datetime
 
 import streamlit as st
@@ -100,6 +101,8 @@ if "_report_data" not in st.session_state:
     st.session_state._report_data = {}
 if "_report_error" not in st.session_state:
     st.session_state._report_error = None
+if "_report_traceback" not in st.session_state:
+    st.session_state._report_traceback = None
 
 # 自动导出
 if "_export_zip" not in st.session_state:
@@ -275,9 +278,13 @@ with st.sidebar:
 
     # ── 显示上次报告错误 ──
     if st.session_state.get("_report_error"):
-        st.error(f"上一次报告生成失败: {st.session_state._report_error}")
+        st.error(f"报告生成失败: {st.session_state._report_error}")
+        if st.session_state.get("_report_traceback"):
+            with st.expander("🔍 查看错误详情", expanded=False):
+                st.code(st.session_state._report_traceback)
         if st.button("❌ 清除错误", use_container_width=True):
             st.session_state._report_error = None
+            st.session_state._report_traceback = None
             st.rerun()
 
     # ── 一键生成报告 ──
@@ -366,10 +373,11 @@ if st.session_state._report_running:
                 export_charts = report["charts"]
                 export_steps = report["process_steps"]
             except Exception as e:
-                err_msg = str(e)
-                st.session_state._report_error = err_msg
+                tb = traceback.format_exc()
+                st.session_state._report_error = str(e)
+                st.session_state._report_traceback = tb
                 status.update(label="❌ 报告生成失败", state="error")
-                export_content = f"# 报告生成失败\n\n{err_msg}\n\n请检查数据后重试。"
+                export_content = f"# 报告生成失败\n\n**错误**: {e}\n\n<details>\n<summary>完整堆栈</summary>\n\n```\n{tb}\n```\n</details>\n\n请检查数据后重试。"
                 export_charts = []
                 export_steps = []
 
