@@ -5,8 +5,6 @@
 """
 import io
 import base64
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import pandas as pd

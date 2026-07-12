@@ -46,7 +46,6 @@ import re
 from datetime import datetime
 
 import streamlit as st
-import pandas as pd
 
 # Streamlit Cloud secrets → 环境变量
 if "DEEPSEEK_API_KEY" in st.secrets:
@@ -75,22 +74,9 @@ if os.path.exists(css_path):
     with open(css_path, encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-
-# ══════════════════════════════════════════════════════════════
-#  缓存维度提取
-# ══════════════════════════════════════════════════════════════
-
-@st.cache_data(show_spinner=False)
-def cached_extract_dimensions(_df: pd.DataFrame):
-    """st.cache_data 包裹，上传后只算一次。"""
-    return extract_dimensions(_df)
-
-
 # ══════════════════════════════════════════════════════════════
 #  会话状态初始化
 # ══════════════════════════════════════════════════════════════
-
-if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "file_id" not in st.session_state:
     st.session_state.file_id = None
@@ -236,7 +222,7 @@ with st.sidebar:
                 st.session_state._report_stage = 0
 
                 # 提取维度（带缓存）
-                dims = cached_extract_dimensions(df)
+                dims = extract_dimensions(df)
                 st.session_state.dimensions = dims
 
                 st.success(f"✅ {uploaded_file.name} 已加载")
