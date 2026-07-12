@@ -49,7 +49,7 @@ def _try_time_column(series: pd.Series) -> Optional[List[str]]:
         return None
 
     # 提取年月（PeriodIndex 比手写正则健壮得多）
-    periods = dt.dt.to_period("M").dropna().unique().sort_values()
+    periods = sorted(set(dt.dt.to_period("M").dropna()))
     if len(periods) < 2 or len(periods) > 500:
         return None
 
