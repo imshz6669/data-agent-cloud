@@ -90,7 +90,8 @@ def generate_full_report(
     all_findings_parts: list = []
 
     # ── 将所有识别出的数值列强制转换为纯数值，防止混入的字符串导致 .sum() 拼接 ──
-    for col in meta["sales_cols"] + meta["qty_cols"] + meta["price_cols"]:
+    # numeric_cols 必须包含在内，因为 sales_col / qty_col 可能回退到它
+    for col in set(meta["numeric_cols"]):
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # ── 自动识别时间粒度 ──
