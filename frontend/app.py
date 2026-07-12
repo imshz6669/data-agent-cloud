@@ -57,11 +57,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.tools import DATA_STORE, parse_uploaded_file
 from backend.agent import process_chat, llm
 from backend.dimension import extract_dimensions, apply_filters
-from backend.report import (
-    compute_statistics,
-    generate_charts,
-    generate_conclusion,
-)
+from backend.report import generate_full_report
 from backend.export import create_zip_export, create_pdf_export
 
 st.set_page_config(
@@ -156,17 +152,6 @@ def _run_export():
         st.session_state._export_pdf = create_pdf_export(msgs, fname)
 
 
-# ══════════════════════════════════════════════════════════════
-#  报告管道阶段
-# ══════════════════════════════════════════════════════════════
-
-REPORT_STAGES = {
-    1: ("📈 计算统计指标", "stats"),
-    2: ("📊 生成图表", "charts"),
-    3: ("📝 AI 撰写结论", "conclusion"),
-    4: ("✅ 完成", "done"),
-}
-
 
 # ══════════════════════════════════════════════════════════════
 #  侧边栏
@@ -242,9 +227,9 @@ with st.sidebar:
 
     # ── 维度过滤 ──
     dims = st.session_state.get("dimensions", {})
-    if st.session_state.file_id and (dims.get("time") or dims.get("category")):
+    if st.session_state.file_id and dims.get("time"):
         st.divider()
-        st.markdown("### 🔍 维度过滤")
+        st.markdown("### ⏱ 时间筛选")
 
         changed = False
 
@@ -253,27 +238,13 @@ with st.sidebar:
             col = tc["column"]
             periods = tc["periods"]
             selected = st.multiselect(
-                f"⏱ {col}（留空=全部）",
+                f"{col}（留空=全部）",
                 options=periods,
                 default=st.session_state.time_filters.get(col, []),
                 key=f"time_filter_{col}",
             )
             if selected != st.session_state.time_filters.get(col, []):
                 st.session_state.time_filters[col] = selected
-                changed = True
-
-        # 分类维度
-        for cc in dims.get("category", []):
-            col = cc["column"]
-            values = cc["values"]
-            selected = st.multiselect(
-                f"🏷 {col}（留空=全部）",
-                options=values,
-                default=st.session_state.category_filters.get(col, []),
-                key=f"cat_filter_{col}",
-            )
-            if selected != st.session_state.category_filters.get(col, []):
-                st.session_state.category_filters[col] = selected
                 changed = True
 
         if changed:
@@ -305,9 +276,8 @@ with st.sidebar:
         st.divider()
         st.markdown("### 📥 导出报告")
 
-        # 确保有导出文件
-        if st.session_state._export_zip is None:
-            _run_export()
+        # 每次渲染都重新生成，保证包含最新对话
+        _run_export()
 
         if st.session_state._export_zip:
             st.download_button(
@@ -340,98 +310,43 @@ if st.session_state.file_id:
 else:
     st.warning("👈 请先在左侧上传 CSV / Excel / Word 文件")
 
-# ── 报告管道进度 ──
+# ── 报告管道 ──
 if st.session_state._report_running:
-    stage = st.session_state._report_stage
-    total = len(REPORT_STAGES)
-    label, _key = REPORT_STAGES.get(stage, (f"阶段 {stage}", ""))
-
-    status = st.status(f"📊 正在生成报告... ({stage}/{total})", expanded=True)
-
-    # ── 阶段 1: 统计 ──
-    if stage == 1:
-        status.write("📈 计算统计指标...")
-        fid = st.session_state.file_id
-        df = DATA_STORE.get(fid, st.session_state.full_df)
-        if df is not None:
-            time_col = (
-                st.session_state.dimensions["time"][0]["column"]
-                if st.session_state.dimensions.get("time")
-                else ""
-            )
-            st.session_state._report_data["stats"] = compute_statistics(
-                df, time_col
-            )
-            st.session_state._report_data["time_col"] = time_col
-        st.session_state._report_stage = 2
-        st.rerun()
-
-    # ── 阶段 2: 图表 ──
-    elif stage == 2:
-        status.write("📊 生成图表...")
-        fid = st.session_state.file_id
-        df = DATA_STORE.get(fid, st.session_state.full_df)
-        stats = st.session_state._report_data.get("stats", {})
-        time_col = st.session_state._report_data.get("time_col", "")
-        if df is not None:
-            charts = generate_charts(df, stats, time_col)
-            st.session_state._report_data["charts"] = charts
-        st.session_state._report_stage = 3
-        st.rerun()
-
-    # ── 阶段 3: 结论 ──
-    elif stage == 3:
-        status.write("📝 AI 撰写结论...")
-        stats = st.session_state._report_data.get("stats", {})
-        charts = st.session_state._report_data.get("charts", [])
-        try:
-            conclusion = generate_conclusion(stats, len(charts), llm)
-        except Exception:
-            conclusion = f"共 {stats.get('rows', '?')} 条记录，分析完成。"
-        st.session_state._report_data["conclusion"] = conclusion
-        st.session_state._report_stage = 4
-        st.rerun()
-
-    # ── 阶段 4: 完成 ──
-    elif stage == 4:
-        status.update(label="✅ 报告生成完成！", state="complete")
-        stats = st.session_state._report_data.get("stats", {})
-        charts = st.session_state._report_data.get("charts", [])
-        conclusion = st.session_state._report_data.get("conclusion", "")
-
-        # 构建报告文本
-        lines = ["## 📊 数据分析报告\n"]
-        lines.append(f"**数据规模**：{stats.get('rows', '?')} 行 × {len(stats.get('columns', []))} 列\n")
-
-        if stats.get("numeric"):
-            lines.append("### 📈 关键指标")
-            for col, n in list(stats["numeric"].items())[:5]:
-                lines.append(f"- **{col}**：均值 {n['mean']}，总和 {n['sum']}，最大 {n['max']}")
-
-        if conclusion:
-            lines.append(f"\n### 📝 分析结论\n{conclusion}")
-
-        reply = "\n".join(lines)
-
-        st.session_state.messages.append(
-            {"role": "user", "content": "📊 一键生成报告（自动）"}
+    fid = st.session_state.file_id
+    df = DATA_STORE.get(fid, st.session_state.full_df)
+    if df is not None:
+        time_col = (
+            st.session_state.dimensions["time"][0]["column"]
+            if st.session_state.dimensions.get("time")
+            else ""
         )
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": reply,
-                "charts": charts,
-                "process_steps": [
-                    {"step": "📈 统计", "detail": f"{stats.get('rows', '?')}行 × {len(stats.get('columns', []))}列"},
-                    {"step": "📊 图表", "detail": f"生成 {len(charts)} 张图表"},
-                    {"step": "📝 结论", "detail": conclusion[:100] + "..." if len(conclusion) > 100 else conclusion},
-                ],
-            }
-        )
+        with st.status("📊 正在生成报告...", expanded=True) as status:
+            st.write("📈 计算指标 & 生成图表 & AI 洞察...")
+            try:
+                report = generate_full_report(
+                    df,
+                    file_name=st.session_state.get("file_name", ""),
+                    time_col=time_col,
+                    llm=llm,
+                )
+                status.update(label="✅ 报告生成完成！", state="complete")
 
-        st.session_state._report_running = False
-        st.session_state._report_stage = 0
-        st.rerun()
+                st.session_state.messages.append(
+                    {"role": "user", "content": "📊 一键生成报告"}
+                )
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": report["reply"],
+                        "charts": report["charts"],
+                        "process_steps": report["process_steps"],
+                    }
+                )
+            except Exception as e:
+                st.error(f"报告生成失败: {e}")
+
+    st.session_state._report_running = False
+    st.rerun()
 
 
 # ── 历史消息 ──
