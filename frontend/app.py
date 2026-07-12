@@ -104,8 +104,6 @@ if "_report_data" not in st.session_state:
     st.session_state._report_data = {}
 
 # 自动导出
-if "auto_export" not in st.session_state:
-    st.session_state.auto_export = False
 if "_export_zip" not in st.session_state:
     st.session_state._export_zip = None
 if "_export_pdf" not in st.session_state:
@@ -289,15 +287,6 @@ with st.sidebar:
     else:
         st.caption("⚠️ 请先上传数据文件")
 
-    # ── 自动导出开关 ──
-    st.divider()
-    auto = st.toggle("🔁 自动导出", value=st.session_state.auto_export)
-    if auto != st.session_state.auto_export:
-        st.session_state.auto_export = auto
-        if auto and st.session_state.messages:
-            _run_export()
-        st.rerun()
-
     # ── 一键生成报告 ──
     st.divider()
     if st.button(
@@ -440,10 +429,6 @@ if st.session_state._report_running:
             }
         )
 
-        # 自动导出
-        if st.session_state.auto_export:
-            _run_export()
-
         st.session_state._report_running = False
         st.session_state._report_stage = 0
         st.rerun()
@@ -512,11 +497,6 @@ if prompt := st.chat_input("输入你的分析需求…"):
                             "process_steps": process_steps,
                         }
                     )
-
-                    # 自动导出
-                    if st.session_state.auto_export:
-                        _run_export()
-                        st.rerun()
 
                 except Exception as e:
                     st.error(f"处理异常: {e}")
