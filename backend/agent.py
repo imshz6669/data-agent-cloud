@@ -120,6 +120,7 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "  · 聚合操作（groupby/sum/mean等）必须基于 df 的列，聚合结果与 describe 统计一致\n"
         "  · 图表中的数值必须与 df 原始数据或聚合结果完全一致，不得凭空产生\n"
         "规范要求（必须遵守，只生成 Python 代码，不要解释，base64 赋值给 img_base64）：\n"
+        "  · 禁止截断数据: 不得使用 .tail(N)、.head(N)、LIMIT、[-N:] 等方式只展示部分周期，必须绘制全部数据\n"
         "  · 科学计数法: 禁止！在数值轴上用 ax.yaxis.set_major_formatter(ScalarFormatter()) 或 try: plt.ticklabel_format(style='plain', axis='y') except: pass\n"
         "  · 数值标注: 柱状图用 plt.bar_label()，折线图在数据点标注，饼图设 autopct\n"
         "  · 标题: 必须含「分析维度+指标」如\"2017-2019年各渠道销售额柱状图\"，居中，字号>轴标签\n"
@@ -138,7 +139,7 @@ def create_chart(file_id: str, chart_description: str) -> str:
         "import pandas as pd\n"
         "import numpy as np\n"
         "import io, base64\n"
-        "plt.rcParams['axes.unicode_minus'] = False\n"
+        "plt.rcParams.update({'font.sans-serif': ['WenQuanYi Zen Hei', 'DejaVu Sans'], 'axes.unicode_minus': False, 'font.family': 'sans-serif'})\n"
         "from matplotlib.ticker import ScalarFormatter\n"
         "try:\n"
         "    plt.gca().yaxis.set_major_formatter(ScalarFormatter())\n"
@@ -168,8 +169,11 @@ def create_chart(file_id: str, chart_description: str) -> str:
     local_vars = {'df': df, 'pd': pd, 'np': np, 'plt': plt, 'sns': sns, 'io': io, 'base64': base64}
     try:
         # exec 前确保 rcParams 未被 LLM 代码覆盖（全局已由 app.py 设置）
-        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False
+        plt.rcParams.update({
+            'font.sans-serif': ['WenQuanYi Zen Hei', 'DejaVu Sans'],
+            'axes.unicode_minus': False,
+            'font.family': 'sans-serif',
+        })
 
         _savefig_calls = re.findall(r'plt\.savefig\(([^)]+(?:\([^)]*\)[^)]*)*)\)', code)
         for _call in _savefig_calls:

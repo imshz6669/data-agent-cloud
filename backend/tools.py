@@ -51,6 +51,10 @@ def execute_nl2sql(df: pd.DataFrame, question: str, llm) -> Tuple[str, pd.DataFr
 
 问题: {question}
 
+⚠️ 使用限制：
+- 不要使用 LIMIT 或 TOP 限制返回行数，返回所有匹配的数据
+- 不要使用 OFFSET 或分页
+
 请只返回 SQL 语句，不要包含其他解释或标记。"""
     response = llm.invoke(prompt)
     sql = response.content.strip()
@@ -61,15 +65,41 @@ def execute_nl2sql(df: pd.DataFrame, question: str, llm) -> Tuple[str, pd.DataFr
         sql = sql[:-3]
     sql = sql.strip()
 
-    # 修复 LLM 生成 SQL 时常见缺空格问题
+    # 修复 LLM 常见 SQL 拼写错误
     import re as _re
     sql = _re.sub(r'(?i)(FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|JOIN|ON|AND|OR)(["\w])', r'\1 \2', sql)
     sql = _re.sub(r'(\w)(FROM|WHERE|GROUP\s+BY|ORDER\s+BY)', r'\1 \2', sql)
+    sql = _re.sub(r'(?i)\bOR\s+DER\s+BY\b', 'ORDER BY', sql)
+    sql = _re.sub(r'(?i)\bGRUP\s+BY\b', 'GROUP BY', sql)
 
     # 4) 执行 SQL
-    result_df = pd.read_sql_query(sql, conn)
-    conn.close()
-    return sql, result_df
+    try:
+        result_df = pd.read_sql_query(sql, conn)
+        conn.close()
+        return sql, result_df
+    except Exception as e:
+        conn.close()
+        # 把错误喂回 LLM 修正一次
+        fix_prompt = f"""SQL 执行出错，请修正：
+原始 SQL: {sql}
+错误信息: {e}
+
+请只返回修正后的 SQL 语句，不含解释。"""
+        fixed = llm.invoke(fix_prompt)
+        fixed_sql = fixed.content.strip()
+        if fixed_sql.startswith('```sql'):
+            fixed_sql = fixed_sql[6:]
+        if fixed_sql.endswith('```'):
+            fixed_sql = fixed_sql[:-3]
+        fixed_sql = fixed_sql.strip()
+        # 二次清洗
+        fixed_sql = _re.sub(r'(?i)\bOR\s+DER\s+BY\b', 'ORDER BY', fixed_sql)
+        fixed_sql = _re.sub(r'(?i)\bGRUP\s+BY\b', 'GROUP BY', fixed_sql)
+        conn2 = sqlite3.connect(':memory:')
+        df.to_sql('data', conn2, index=False, if_exists='replace')
+        result_df = pd.read_sql_query(fixed_sql, conn2)
+        conn2.close()
+        return fixed_sql, result_df
 
 
 def analyze_data(df: pd.DataFrame, code: str) -> pd.DataFrame:

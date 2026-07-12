@@ -98,12 +98,16 @@ if "_report_stage" not in st.session_state:
     st.session_state._report_stage = 0
 if "_report_data" not in st.session_state:
     st.session_state._report_data = {}
+if "_report_error" not in st.session_state:
+    st.session_state._report_error = None
 
 # 自动导出
 if "_export_zip" not in st.session_state:
     st.session_state._export_zip = None
 if "_export_pdf" not in st.session_state:
     st.session_state._export_pdf = None
+if "_export_hash" not in st.session_state:
+    st.session_state._export_hash = None
 
 
 # ══════════════════════════════════════════════════════════════
@@ -144,12 +148,20 @@ def _apply_all_filters():
 
 
 def _run_export():
-    """执行导出，更新 _export_zip / _export_pdf。"""
+    """按需生成导出，仅在消息变化时重新计算。"""
     msgs = st.session_state.messages
     fname = st.session_state.get("file_name", "")
-    if msgs:
-        st.session_state._export_zip = create_zip_export(msgs, fname)
-        st.session_state._export_pdf = create_pdf_export(msgs, fname)
+    if not msgs:
+        return
+
+    # 用消息数量 + 最后一条的截断内容作为哈希，检测是否有新消息
+    _key = (len(msgs), msgs[-1].get("content", "")[:80] if msgs else "")
+    if st.session_state.get("_export_hash") == _key:
+        return  # 无变化，复用上次的导出数据
+    st.session_state._export_hash = _key
+
+    st.session_state._export_zip = create_zip_export(msgs, fname)
+    st.session_state._export_pdf = create_pdf_export(msgs, fname)
 
 
 
@@ -174,6 +186,8 @@ with st.sidebar:
         st.session_state._report_data = {}
         st.session_state._export_zip = None
         st.session_state._export_pdf = None
+        st.session_state._export_hash = None
+        st.session_state._report_error = None
         if st.session_state.full_df is not None and st.session_state.file_id:
             DATA_STORE[st.session_state.file_id] = st.session_state.full_df.copy()
         st.rerun()
@@ -209,6 +223,7 @@ with st.sidebar:
                     st.session_state.category_filters = {}
                     st.session_state._report_running = False
                     st.session_state._report_stage = 0
+                    st.session_state._report_error = None
 
                     # 提取维度
                     dims = extract_dimensions(df)
@@ -257,6 +272,13 @@ with st.sidebar:
         st.caption("📎 当前数据已加载")
     else:
         st.caption("⚠️ 请先上传数据文件")
+
+    # ── 显示上次报告错误 ──
+    if st.session_state.get("_report_error"):
+        st.error(f"上一次报告生成失败: {st.session_state._report_error}")
+        if st.button("❌ 清除错误", use_container_width=True):
+            st.session_state._report_error = None
+            st.rerun()
 
     # ── 一键生成报告 ──
     st.divider()
@@ -321,7 +343,16 @@ if st.session_state._report_running:
             else ""
         )
         with st.status("📊 正在生成报告...", expanded=True) as status:
-            st.write("📈 计算指标 & 生成图表 & AI 洞察...")
+            st.write("📈 第1步/5：数据概览 & 核心指标计算...")
+            st.write("📊 第2步/5：同期对比分析...")
+            st.write("📉 第3步/5：趋势图 & 异常检测...")
+            st.write("📋 第4步/5：分类对比分析...")
+            st.write("🤖 第5步/5：AI 关键发现生成...")
+
+            report = None
+            export_content = ""
+            export_charts = []
+            export_steps = []
             try:
                 report = generate_full_report(
                     df,
@@ -330,20 +361,46 @@ if st.session_state._report_running:
                     llm=llm,
                 )
                 status.update(label="✅ 报告生成完成！", state="complete")
-
-                st.session_state.messages.append(
-                    {"role": "user", "content": "📊 一键生成报告"}
-                )
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": report["reply"],
-                        "charts": report["charts"],
-                        "process_steps": report["process_steps"],
-                    }
-                )
+                st.session_state._report_error = None
+                export_content = report["reply"]
+                export_charts = report["charts"]
+                export_steps = report["process_steps"]
             except Exception as e:
-                st.error(f"报告生成失败: {e}")
+                err_msg = str(e)
+                st.session_state._report_error = err_msg
+                status.update(label="❌ 报告生成失败", state="error")
+                export_content = f"# 报告生成失败\n\n{err_msg}\n\n请检查数据后重试。"
+                export_charts = []
+                export_steps = []
+
+            # 直接创建导出，不依赖消息渲染
+            fname = st.session_state.get("file_name", "")
+            export_msgs = [
+                {"role": "user", "content": "📊 一键生成报告"},
+                {"role": "assistant", "content": export_content, "charts": export_charts, "process_steps": export_steps},
+            ]
+            try:
+                st.session_state._export_zip = create_zip_export(export_msgs, fname)
+            except Exception:
+                st.session_state._export_zip = None
+            try:
+                st.session_state._export_pdf = create_pdf_export(export_msgs, fname)
+            except Exception:
+                st.session_state._export_pdf = None
+            # 同时追加到历史消息（供聊天区显示）
+            st.session_state.messages.append(
+                {"role": "user", "content": "📊 一键生成报告"}
+            )
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": export_content,
+                    "charts": export_charts,
+                    "process_steps": export_steps,
+                }
+            )
+            # 标记已导出，避免 _run_export 重复生成
+            st.session_state._export_hash = (len(st.session_state.messages), export_content[:80])
 
     st.session_state._report_running = False
     st.rerun()
