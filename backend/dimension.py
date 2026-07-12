@@ -4,6 +4,8 @@
 - 自动探测分类列（城市、渠道等）作为候选维度
 """
 import warnings
+warnings.filterwarnings("ignore", category=UserWarning, message="Could not infer format")
+
 import pandas as pd
 from typing import Dict, List, Optional
 
@@ -39,12 +41,10 @@ def extract_dimensions(df: pd.DataFrame) -> Dict[str, List[Dict]]:
 def _try_time_column(series: pd.Series) -> Optional[List[str]]:
     """尝试将列解析为日期，提取 YYYY-MM 格式的周期列表。"""
     # pd.to_datetime 覆盖绝大多数日期格式
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="Could not infer format")
-        try:
-            dt = pd.to_datetime(series, errors="coerce")
-        except Exception:
-            return None
+    try:
+        dt = pd.to_datetime(series, errors="coerce")
+    except Exception:
+        return None
 
     valid_ratio = dt.notna().sum() / max(len(series), 1)
     if valid_ratio < 0.7:  # 少于 70% 可解析 → 不算日期列

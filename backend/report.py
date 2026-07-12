@@ -78,9 +78,12 @@ def compute_statistics(df: pd.DataFrame, time_col: str = "") -> Dict[str, Any]:
             df_tmp["_period"] = dt.dt.to_period("M").astype(str)
             df_valid = df_tmp.dropna(subset=["_period"])
             if not df_valid.empty and num_cols:
-                agg = df_valid.groupby("_period")[num_cols].agg(["sum", "mean"]).reset_index()
+                agg = df_valid.groupby("_period")[num_cols].agg(["sum", "mean"])
+                # 展平 MultiIndex 列名：('销售额','sum') → '销售额_sum'
+                agg.columns = ["_".join(c).rstrip("_") for c in agg.columns]
+                agg = agg.reset_index()
                 stats["time_agg"] = {
-                    "periods": df_valid["_period"].tolist(),
+                    "periods": agg["_period"].tolist(),
                     "columns": num_cols,
                     "data": agg.to_dict(orient="records"),
                 }
@@ -110,7 +113,7 @@ def generate_charts(df: pd.DataFrame, stats: Dict, time_col: str = "") -> List[s
         # 取第一个数值列作为主指标
         main_col = stats["numeric_cols"][0]
         periods = [r["_period"] for r in ta["data"]]
-        sums = [r.get((main_col, "sum"), r.get(main_col, 0)) for r in ta["data"]]
+        sums = [r.get(f"{main_col}_sum", 0) for r in ta["data"]]
 
         if len(periods) >= 2:
             img = _line_chart(periods, sums, main_col, f"{main_col} 月度趋势")
