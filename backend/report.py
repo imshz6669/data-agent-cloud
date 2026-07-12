@@ -75,6 +75,85 @@ def _detect_columns(df: pd.DataFrame) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════
+#  LLM 列角色识别
+# ══════════════════════════════════════════════════════════════
+
+def _llm_detect_columns(df: pd.DataFrame, llm) -> Optional[dict]:
+    """用 LLM 识别列角色，返回 meta dict；失败返回 None。"""
+    try:
+        lines = []
+        for col in df.columns:
+            dtype = str(df[col].dtype)
+            uniq = df[col].dropna().unique()[:5]
+            samples = [str(v)[:40] for v in uniq]
+            lines.append(f"  - {col}  (type={dtype}, 样例={samples})")
+        prompt = f"""分析以下 DataFrame 各列的角色。
+
+共 {len(df.columns)} 列：
+{chr(10).join(lines)}
+
+对每一列给出角色（只返回 JSON，不要其他文字）：
+{{
+  "列名": "time / sales / qty / price / category / numeric / ignore"
+}}
+
+规则：
+- time: 日期/时间列
+- sales: 销售额、金额、收入等货币类
+- qty: 数量、订单量等计数类
+- price: 单价、均价
+- category: 分类、文本类（用于分组）
+- numeric: 其他数值列（ID、编码等）
+- ignore: 应忽略的列
+"""
+        resp = llm.invoke(prompt)
+        text = resp.content.strip()
+        import json, re
+        m = re.search(r'\{.*\}', text, re.DOTALL)
+        if not m:
+            return None
+        result = json.loads(m.group())
+        meta = {"sales_cols": [], "qty_cols": [], "price_cols": [],
+                "cat_cols": [], "numeric_cols": [], "time_cols": []}
+        for col, role in result.items():
+            if col not in df.columns:
+                continue
+            if role == "time":
+                meta["time_cols"].append(col)
+            elif role == "sales":
+                meta["sales_cols"].append(col)
+                meta["numeric_cols"].append(col)
+            elif role == "qty":
+                meta["qty_cols"].append(col)
+                meta["numeric_cols"].append(col)
+            elif role == "price":
+                meta["price_cols"].append(col)
+                meta["numeric_cols"].append(col)
+            elif role == "numeric":
+                meta["numeric_cols"].append(col)
+            elif role == "category":
+                meta["cat_cols"].append(col)
+        # 对 LLM 漏掉的角色，用启发式补充
+        heur = _detect_columns(df)
+        for k in meta:
+            if not meta[k] and heur.get(k):
+                meta[k] = heur[k]
+        return meta
+    except Exception:
+        return None
+
+
+# ══════════════════════════════════════════════════════════════
+#  安全求和（强制转数值再 sum，绝对不会拼接字符串）
+# ══════════════════════════════════════════════════════════════
+
+def _safe_sum(series) -> float:
+    """对任意列安全求数值和，字符串→NaN→忽略。"""
+    s = pd.to_numeric(series, errors="coerce")
+    return float(s.sum()) if s.notna().any() else 0.0
+
+
+# ══════════════════════════════════════════════════════════════
 #  报告生成主函数
 # ══════════════════════════════════════════════════════════════
 
@@ -84,13 +163,16 @@ def generate_full_report(
     time_col: str = "",
     llm=None,
 ) -> dict:
-    meta = _detect_columns(df)
+    # LLM 列识别（优先），失败则回退启发式
+    meta = _llm_detect_columns(df, llm) if llm else None
+    if not meta:
+        meta = _detect_columns(df)
+
     charts: list = []
     steps: list = []
     all_findings_parts: list = []
 
     # ── 将所有识别出的数值列强制转换为纯数值，防止混入的字符串导致 .sum() 拼接 ──
-    # numeric_cols 必须包含在内，因为 sales_col / qty_col 可能回退到它
     for col in set(meta["numeric_cols"]):
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -110,7 +192,9 @@ def generate_full_report(
         overview += f"- **数据来源**：{file_name}\n"
     overview += f"- **数据行数**：{rows} 条\n"
     overview += f"- **数据列数**：{len(df.columns)} 列\n"
-    steps.append({"step": "数据概览", "detail": f"{rows}行 × {len(df.columns)}列"})
+    col_debug = (f"销售额列={meta['sales_cols']}, 数量列={meta['qty_cols']}, "
+                 f"分类列={meta['cat_cols']}, 时间列={meta['time_cols']}")
+    steps.append({"step": "数据概览", "detail": f"{rows}行 × {len(df.columns)}列 | {col_debug}"})
 
     # ════════════════════════════════════════════════
     #  2. 核心指标卡
@@ -124,8 +208,8 @@ def generate_full_report(
     total_sales = None
     if sales_col:
         try:
-            _s = pd.to_numeric(df[sales_col], errors="coerce").sum()
-            total_sales = round(float(_s), 2) if pd.notna(_s) else None
+            _s = _safe_sum(df[sales_col])
+            total_sales = round(_s, 2)
         except Exception:
             total_sales = None
         if total_sales is not None:
@@ -136,8 +220,8 @@ def generate_full_report(
     total_qty = None
     if qty_col:
         try:
-            _q = pd.to_numeric(df[qty_col], errors="coerce").sum()
-            total_qty = int(_q) if pd.notna(_q) else None
+            _q = _safe_sum(df[qty_col])
+            total_qty = int(_q)
         except Exception:
             total_qty = None
         if total_qty is not None:
@@ -199,7 +283,7 @@ def generate_full_report(
     cat_text_parts = []
     if cat_col and sales_col:
         # 分类柱状图
-        top = df.groupby(cat_col)[sales_col].sum().sort_values(ascending=False)
+        top = df.groupby(cat_col)[sales_col].apply(_safe_sum).sort_values(ascending=False)
         img = _bar_chart(top.index.tolist(), top.values.tolist(), cat_col, sales_col)
         if img:
             charts.append(img)
@@ -309,7 +393,7 @@ def _compute_mom(df: pd.DataFrame, time_col: str, value_col: str, granularity: s
         freq = granularity if granularity != "D" else "W"
         chart_df = df.copy()
         chart_df["_p"] = pd.to_datetime(chart_df[time_col], errors="coerce").dt.to_period(freq).astype(str)
-        grouped = chart_df.groupby("_p")[value_col].sum().sort_index()
+        grouped = chart_df.groupby("_p")[value_col].apply(_safe_sum).sort_index()
         if len(grouped) < 2:
             return None
         curr = grouped.iloc[-1]
@@ -328,7 +412,7 @@ def _compute_yoy(df: pd.DataFrame, time_col: str, value_col: str) -> Optional[fl
         df_temp = df.copy()
         df_temp["_year"] = dt.dt.year
         df_temp["_month"] = dt.dt.month
-        monthly = df_temp.groupby(["_year", "_month"])[value_col].sum().reset_index()
+        monthly = df_temp.groupby(["_year", "_month"])[value_col].apply(_safe_sum).reset_index()
         monthly = monthly.sort_values(["_year", "_month"])
         if len(monthly) < 13:
             return None
@@ -382,7 +466,7 @@ def _build_trend_charts(df: pd.DataFrame, time_col: str,
 
     chart_df = df.copy()
     chart_df["_p"] = pd.to_datetime(chart_df[time_col], errors="coerce").dt.to_period(freq).astype(str)
-    grouped = chart_df.groupby("_p")[sales_col].sum().reset_index()
+    grouped = chart_df.groupby("_p")[sales_col].apply(_safe_sum).reset_index()
 
     # 异常检测（Z-score > 2 视为异常）
     vals = grouped[sales_col].values
