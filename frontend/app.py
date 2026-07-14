@@ -381,12 +381,15 @@ if st.session_state._report_running:
                 export_charts = []
                 export_steps = []
 
-            # 直接创建导出，不依赖消息渲染
+            # 直接创建导出，包含全部历史对话 + 本次报告
             fname = st.session_state.get("file_name", "")
-            export_msgs = [
-                {"role": "user", "content": "📊 一键生成报告"},
+            export_msgs = st.session_state.messages.copy()  # 历史对话
+            export_msgs.append(
+                {"role": "user", "content": "📊 一键生成报告"}
+            )
+            export_msgs.append(
                 {"role": "assistant", "content": export_content, "charts": export_charts, "process_steps": export_steps},
-            ]
+            )
             try:
                 st.session_state._export_zip = create_zip_export(export_msgs, fname)
             except Exception:
