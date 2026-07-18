@@ -205,8 +205,9 @@ with st.sidebar:
 
     # ── 文件上传 ──
     st.markdown("### 📁 数据上传")
+    st.caption("支持 CSV / Excel / Word 格式")
     uploaded_file = st.file_uploader(
-        "支持 CSV / Excel / Word",
+        "上传文件",
         type=["csv", "xlsx", "xls", "docx"],
         label_visibility="collapsed",
     )
