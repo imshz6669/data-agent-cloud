@@ -39,11 +39,12 @@ def execute_nl2sql(df: pd.DataFrame, question: str, llm) -> Tuple[str, pd.DataFr
     schema = f"表名: data\n列: {columns}\n示例数据:\n{df.head(3).to_string(index=False)}"
 
     # 3) 让 LLM 生成 SQL（这里用传入的 llm 对象）
-    prompt = f"""你是一个 SQL 专家。请将下面的自然语言问题转换为 SQL 查询语句。
+        prompt = f"""你是一个 SQL 专家。请将下面的自然语言问题转换为 SQL 查询语句。
 数据库使用的是 SQLite，表结构和示例数据如下：
 {schema}
 
 ⚠️ SQLite 限制（禁止使用以下语法）：
+- sqlite3 等 Python SQL 驱动单次 execute 只允许 1 条 SQL 语句，严禁用分号隔开多条
 - 不支持 ROLLUP / CUBE / GROUPING SETS → 需要汇总行请手动 UNION ALL 或分开查询
 - 不支持窗口函数外的 OVER 子句中 ORDER BY 与聚合混用
 - 不支持 FULL OUTER JOIN，请用 LEFT JOIN + UNION + RIGHT JOIN 替代
@@ -84,6 +85,7 @@ def execute_nl2sql(df: pd.DataFrame, question: str, llm) -> Tuple[str, pd.DataFr
 原始 SQL: {sql}
 错误信息: {e}
 
+⚠️ sqlite3 单次 execute 只允许 1 条 SQL，不要用分号分隔多条语句。
 请只返回修正后的 SQL 语句，不含解释。"""
         fixed = llm.invoke(fix_prompt)
         fixed_sql = fixed.content.strip()
