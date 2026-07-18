@@ -250,6 +250,23 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"上传失败: {e}")
 
+    elif st.session_state.get("file_id"):
+        # 用户点击了文件右上角的 ×，删除文件 → 清空对话
+        st.session_state.file_id = None
+        st.session_state.file_name = None
+        st.session_state.full_df = None
+        st.session_state.messages = []
+        st.session_state.dimensions = {"time": [], "category": []}
+        st.session_state.time_filters = {}
+        st.session_state.category_filters = {}
+        st.session_state._report_running = False
+        st.session_state._report_error = None
+        st.session_state._export_zip = None
+        st.session_state._export_pdf = None
+        st.session_state._export_hash = None
+        st.session_state._last_upload_key = None
+        st.rerun()
+
     # ── 维度过滤 ──
     dims = st.session_state.get("dimensions", {})
     if st.session_state.file_id and dims.get("time"):
