@@ -39,7 +39,7 @@ def execute_nl2sql(df: pd.DataFrame, question: str, llm) -> Tuple[str, pd.DataFr
     schema = f"表名: data\n列: {columns}\n示例数据:\n{df.head(3).to_string(index=False)}"
 
     # 3) 让 LLM 生成 SQL（这里用传入的 llm 对象）
-        prompt = f"""你是一个 SQL 专家。请将下面的自然语言问题转换为 SQL 查询语句。
+    prompt = f"""你是一个 SQL 专家。请将下面的自然语言问题转换为 SQL 查询语句。
 数据库使用的是 SQLite，表结构和示例数据如下：
 {schema}
 
